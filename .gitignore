@@ -1,0 +1,10 @@
+.vscode/
+.idea/
+*.bin
+*.hex
+*.elf
+*.o
+build/
+Thumbs.db
+.DS_Store
+~$*
