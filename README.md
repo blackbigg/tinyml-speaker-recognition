@@ -36,7 +36,7 @@
 | **音訊採樣** | 16 kHz / 16-bit Mono PDM 數位麥克風 (MP34DT05) | 涵蓋人類語音 Nyquist 頻寬 (8 kHz)，硬體中斷採樣 |
 | **緩衝架構** | 非同步 Ping-Pong 雙緩衝機制 (250 ms / 切片) | 消除採樣與推論之 CPU 競爭，確保音訊取樣零遺漏 |
 | **待機優化** | 動態 RMS-VAD 底噪自我校準 (Power Gating) | 環境靜音時阻斷推論運算，降低持續監聽功耗 |
-| **特徵萃取 (DSP)** | MFCC (20 倒頻譜係數, 512-FFT, 32 濾波器, 300~6000Hz) | 提取人聲共振峰 (F1~F3)，特徵計算耗時約 18 ms |
+| **特徵萃取 (DSP)** | MFCC (20 倒頻譜係數, 512-FFT, 32 濾波器, 300~6000Hz) | 提取人聲共振峰 (F1 ~ F3)，特徵計算耗時約 18 ms |
 | **模型架構** | 1D-CNN (2 Conv1D + MaxPool + Dropout) ｜ INT8 全量化 | EON Compiler 編譯，權重與激活值全壓至 8-bit 整數 |
 | **記憶體佔用** | 神經網路 13.5 KB（系統 Peak RAM 31.3 KB / Flash 31.4 KB） | 佔 256KB SRAM 之 5.3%，保留充裕空間予後續邏輯 |
 | **推論延遲** | 神經網路推論 6 ms ｜ 系統總延遲約 24 ms (DSP+NN) | 遠低於即時互動門檻 (<100 ms) |
@@ -57,10 +57,10 @@
    語音辨識視窗為 1000 ms，切分為 4 個 250 ms 子切片。每 250 ms 推進一個切片並觸發判定，維持即時連續監聽。
 4. **多標籤機率解析與決策控制**：  
    設定信心度門檻 `CONFIDENCE_THRESHOLD = 0.55`：
-   * $p_{	ext{go\_me}} \ge 0.55$：本人指令「GO」 $ightarrow$ 輸出 HIGH 點亮 LED。
-   * $p_{	ext{stop\_me}} \ge 0.55$：本人指令「STOP」 $ightarrow$ 輸出 LOW 熄滅 LED。
-   * $p_{	ext{others}} \ge 0.55$：他人冒用 $ightarrow$ 觸發 REJECT 攔截並保持原狀態。
-   * 其餘狀況：低信心度或背景雜訊 $ightarrow$ 維持原狀態不更動。
+   * `p_go_me >= 0.55`：本人指令「GO」 ➔ 輸出 HIGH 點亮 LED。
+   * `p_stop_me >= 0.55`：本人指令「STOP」 ➔ 輸出 LOW 熄滅 LED。
+   * `p_others >= 0.55`：他人冒用 ➔ 觸發 REJECT 攔截並保持原狀態。
+   * 其餘狀況：低信心度或背景雜訊 ➔ 維持原狀態不更動。
 
 ---
 
@@ -73,7 +73,7 @@
   * 輸入重塑為 (49 x 20) 特徵矩陣。
   * 卷積層 1：Filters: 8, Kernel: 3, ReLU。
   * 卷積層 2：Filters: 16, Kernel: 3, ReLU。
-  * 正則化：MaxPool + Dropout ($p = 0.25$) 防止過擬合。
+  * 正則化：MaxPool + Dropout (rate = 0.25) 防止過擬合。
   * 輸出層：Dense Softmax 連接 5 類別輸出。
 * **INT8 量化**：全網絡量化為 8-bit 整數，神經網路記憶體由原本 Float32 的 ~54 KB 大幅縮減至 13.5 KB，且準確率無顯著衰退。
 
@@ -93,8 +93,8 @@
 
 | 測試案例 | 發話者與輸入語音 | 系統決策與動作 | 實機測試狀態 | 影片連結 |
 | :---: | :---: | :---: | :---: | :---: |
-| **Demo 1** | 本人發音「GO」 | OWNER_GO 信心度達標 $ightarrow$ 輸出 High | **成功觸發 (LED 點亮)** | [me_test1.mp4](demo_videos/me_test1.mp4) |
-| **Demo 2** | 本人發音「STOP」 | OWNER_STOP 信心度達標 $ightarrow$ 輸出 Low | **成功觸發 (LED 熄滅)** | [me_test2.mp4](demo_videos/me_test2.mp4) |
+| **Demo 1** | 本人發音「GO」 | OWNER_GO 信心度達標 ➔ 輸出 High | **成功觸發 (LED 點亮)** | [me_test1.mp4](demo_videos/me_test1.mp4) |
+| **Demo 2** | 本人發音「STOP」 | OWNER_STOP 信心度達標 ➔ 輸出 Low | **成功觸發 (LED 熄滅)** | [me_test2.mp4](demo_videos/me_test2.mp4) |
 | **Demo 3** | 他人冒用發音「GO」 | 觸發 REJECT 邏輯阻斷 | **成功攔截 (LED 保持熄滅)** | [others_go.mp4](demo_videos/others_go.mp4) |
 | **Demo 4** | 他人冒用發音「STOP」 | 觸發 REJECT 邏輯阻斷 | **成功攔截 (LED 保持點亮)** | [others_stop.mp4](demo_videos/others_stop.mp4) |
 
@@ -125,7 +125,7 @@
    ```
 2. **匯入 Edge Impulse 模型庫**：
    * 開啟 Arduino IDE。
-   * 點選 `草稿碼 (Sketch)` $ightarrow$ `載入程式庫 (Include Library)` $ightarrow$ `加入 .ZIP 程式庫... (Add .ZIP Library...)`。
+   * 點選 `草稿碼 (Sketch)` ➔ `載入程式庫 (Include Library)` ➔ `加入 .ZIP 程式庫... (Add .ZIP Library...)`。
    * 選擇本倉庫中的 `models/ei-edge_computing_project-arduino-1.0.1.zip`。
 3. **開啟並燒錄程式**：
    * 開啟 `firmware/speaker_verification/speaker_verification.ino`。
