@@ -1,5 +1,5 @@
 # TinyML On-Device Speaker Verification & Voice Control System
-### 基於 TinyML 之語者特徵辨識與微控制器控制實作
+### 基於 TinyML 之語者辨識與邊緣量化部署實作系統
 
 [![Platform](https://img.shields.io/badge/Platform-Arduino%20Nano%2033%20BLE-00979D?logo=arduino)](https://store.arduino.cc/products/arduino-nano-33-ble)
 [![MCU](https://img.shields.io/badge/MCU-Nordic%20nRF52840%20(Cortex--M4F%20%40%2064MHz)-blue)](https://www.nordicsemi.com/products/nrf52840)
