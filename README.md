@@ -1,5 +1,5 @@
-# TinyML On-Device Speaker Verification & Acoustic Control System
-### 基於 TinyML 之語者特徵辨識與微控制器極限量化部署實作
+# TinyML On-Device Speaker Verification & Voice Control System
+### 基於 TinyML 之語者特徵辨識與微控制器控制實作
 
 [![Platform](https://img.shields.io/badge/Platform-Arduino%20Nano%2033%20BLE-00979D?logo=arduino)](https://store.arduino.cc/products/arduino-nano-33-ble)
 [![MCU](https://img.shields.io/badge/MCU-Nordic%20nRF52840%20(Cortex--M4F%20%40%2064MHz)-blue)](https://www.nordicsemi.com/products/nrf52840)
@@ -8,180 +8,161 @@
 [![Test Accuracy](https://img.shields.io/badge/Test%20Accuracy-94.1%25-brightgreen)](https://github.com/blackbigg/tinyml-speaker-recognition)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> **Author**: **Cheng-Feng Liu (劉誠豐)**  
-> Department of Electronic Engineering, National Taipei University of Technology (國立臺北科技大學 電子工程系)  
-> Application Profile: National Yang Ming Chiao Tung University (NYCU), College of Industry-Academia Innovation, Institute of Intelligent Systems (840)
+> **開發者**：劉誠豐 (Cheng-Feng Liu)  
+> **學校系所**：國立臺北科技大學 電子工程系 (National Taipei University of Technology)  
+> **專案性質**：邊緣運算課程專題 (Edge Computing Course Project)
 
 ---
 
-## 📌 Executive Summary (TL;DR)
+## 📌 專案簡介 (Project Overview)
 
-* **Core Objective**: Conventional edge Keyword Spotting (KWS) systems lack **Speaker Verification (SV)** and often rely on cloud offloading, creating latency bottlenecks and privacy vulnerabilities. This project implements an **end-to-end, 100% offline, speaker-dependent acoustic control system** directly on a resource-constrained microcontroller (Nordic nRF52840, Arm Cortex-M4F @ 64MHz, 256KB SRAM, no NPU).
-* **Quantitative Highlights**:
-  * **Ultra-Low Memory Footprint**: Neural network tensor arena consumes only **13.5 KB SRAM** (Peak runtime RAM: **31.3 KB**, Flash: **31.4 KB**), taking less than **5.3%** of internal MCU memory.
-  * **Real-Time Edge Response**: Single INT8 inference latency of **6 ms** (total processing delay **~24 ms** including 512-FFT MFCC extraction), operating within a 250 ms sliding window.
-  * **Biometric Security**: Achieved **94.1% test accuracy** (ROC-AUC = 1.00) across 5 classes, with an unauthorized imposter False Acceptance Rate (**FAR**) of **3.6%** (GO) and **8.6%** (STOP).
-  * **Acoustic Gating**: Implemented dynamic RMS Voice Activity Detection (VAD) with runtime noise self-calibration, eliminating unnecessary inference passes during ambient silence.
+本專案為《邊緣運算》課程實作專題，目標是在資源受限的微控制器（Arduino Nano 33 BLE，內建 Nordic nRF52840, Arm Cortex-M4F @ 64MHz，無 NPU，僅 256KB SRAM）上，實現**完全離線（100% On-Device）的語者特徵辨識與關鍵字語音控制系統**。
+
+除了辨識語音指令語義（「GO」開燈、「STOP」關燈）之外，系統亦加入**發話者身分鑑別（Speaker Verification）**，能有效阻斷未授權他人的冒用觸發。全流程透過 Edge Impulse 進行資料收集、特徵工程、模型訓練與 INT8 量化，並在實體開發板完成聲學現場驗證。
+
+### 核心實測亮點：
+* **極低記憶體開銷**：神經網路張量佔用 **13.5 KB SRAM**（系統運行 Peak RAM: **31.3 KB** / Flash: **31.4 KB**），僅佔內部 SRAM 約 5.3%。
+* **毫秒級即時推論**：單次神經網路推論耗時約 **6 ms**（含 MFCC 總處理時間約 24 ms），支援 250 ms 滑動視窗連續監聽。
+* **生物辨識安全性**：測試集準確率達 **94.1%**（5 類別），他人冒用誤接受率（FAR）為 **3.6%**（GO）與 **8.6%**（STOP）。
+* **動態靜音過濾**：韌體實作動態 RMS-VAD 底噪自我校準，環境靜音時直接跳過神經網路推論，大幅降低待機負載。
 
 ---
 
-## 📊 Hardware Benchmarks & Performance Scorecard
+## 📊 硬體規格與實測數據 (Hardware Benchmarks)
 
-| Dimension (評估維度) | Experimental Metric (實測數據與規格) | Engineering Significance (硬體限制考量與技術意涵) |
+| 評估維度 | 實測規格與數據 | 工程設計說明 |
 | :--- | :--- | :--- |
-| **MCU & Architecture** | Arm Cortex-M4F @ 64MHz ｜ 1MB Flash ｜ 256KB SRAM | Standard industrial ultra-low-power MCU; no dedicated NPU accelerator |
-| **Acoustic Frontend** | 16 kHz / 16-bit Mono PDM Microphone (MP34DT05) | Covers full human vocal spectrum up to 8 kHz Nyquist limit via DMA interrupt |
-| **Pipeline Architecture** | Asynchronous Ping-Pong Double Buffering (250 ms/slice) | Completely decouples audio sampling from inference; zero sample drops |
-| **Power Gating** | Dynamic RMS-VAD Ambient Noise Self-Calibration | Bypasses DSP and neural network when silent; minimizes standby power |
-| **DSP Feature Extraction** | MFCC (20 cepstral coefficients, 512-FFT, 32 Mel filters) | Captures formant tracks ($F_1 \sim F_3$); feature extraction takes ~18 ms |
-| **Quantization & Topology** | 1D-CNN (2 Conv1D + MaxPool + Dropout) ｜ INT8 Quantized | Compiled via Edge Impulse EON Compiler; weights and activations in 8-bit |
-| **Memory Footprint** | **NN SRAM: 13.5 KB** (System Peak RAM: **31.3 KB** / Flash: **31.4 KB**) | Consumes only 5.3% of 256KB SRAM, leaving ample headroom for control logic |
-| **Inference Latency** | **NN Inference: 6 ms** ｜ End-to-End System Delay: **~24 ms** | Sub-100ms real-time responsiveness; supports 4-slice sliding continuous mode |
-| **Model Generalization** | Validation Acc: **93.9%** ｜ Test Acc: **94.1%** ｜ F1-Score: **0.94** | 5-class high-separability acoustic manifold (Owner/Imposter GO/STOP/Noise) |
-| **Biometric Security** | False Acceptance Rate (FAR): **3.6% (GO) / 8.6% (STOP)**<br>False Rejection Rate (FRR): **5.4% (GO) / 0.0% (STOP)** | Verified robust imposter rejection while maintaining seamless authorized trigger |
+| **主控核心** | Arm Cortex-M4F @ 64MHz ｜ 1MB Flash ｜ 256KB SRAM | 主流工業級低功耗 MCU，無硬體 NPU 加速單元 |
+| **音訊採樣** | 16 kHz / 16-bit Mono PDM 數位麥克風 (MP34DT05) | 涵蓋人類語音 Nyquist 頻寬 (8 kHz)，硬體中斷採樣 |
+| **緩衝架構** | 非同步 Ping-Pong 雙緩衝機制 (250 ms / 切片) | 消除採樣與推論之 CPU 競爭，確保音訊取樣零遺漏 |
+| **待機優化** | 動態 RMS-VAD 底噪自我校準 (Power Gating) | 環境靜音時阻斷推論運算，降低持續監聽功耗 |
+| **特徵萃取 (DSP)** | MFCC (20 倒頻譜係數, 512-FFT, 32 濾波器, 300~6000Hz) | 提取人聲共振峰 (F1~F3)，特徵計算耗時約 18 ms |
+| **模型架構** | 1D-CNN (2 Conv1D + MaxPool + Dropout) ｜ INT8 全量化 | EON Compiler 編譯，權重與激活值全壓至 8-bit 整數 |
+| **記憶體佔用** | 神經網路 13.5 KB（系統 Peak RAM 31.3 KB / Flash 31.4 KB） | 佔 256KB SRAM 之 5.3%，保留充裕空間予後續邏輯 |
+| **推論延遲** | 神經網路推論 6 ms ｜ 系統總延遲約 24 ms (DSP+NN) | 遠低於即時互動門檻 (<100 ms) |
+| **辨識準確率** | 驗證集 93.9% ｜ 測試集 94.1% ｜ F1-Score 0.94 | 5 類別分離度良好（本人GO/STOP、他人GO/STOP、噪音） |
+| **安全性指標** | 他人冒用誤接受率 (FAR): 3.6% (GO) / 8.6% (STOP)<br>本人合法誤拒絕率 (FRR): 5.4% (GO) / 0.0% (STOP) | 兼具授權易用性與冒用阻斷防護能力 |
 
 ---
 
-## 🏗️ End-to-End System Architecture & Firmware Pipeline
-
-The firmware operates on bare-metal C++ without an RTOS, structured into 4 synchronized execution phases:
+## 🏗️ 系統架構與韌體執行管線 (System Pipeline)
 
 ![System Firmware Pipeline](docs/figures/fig1_system_flowchart_horizontal.png)
 
-1. **Asynchronous Ping-Pong Double Buffering**:  
-   Audio processing (DSP + NN) requires ~24 ms. A blocking architecture would drop incoming microphone samples during inference. We implement an `inference_t` double-buffer structure: the hardware PDM interrupt (`pdm_data_ready_inference_callback`) continuously fills the `Active Buffer` in the background, while the foreground CPU processes the `Ready Buffer`.
-2. **Dynamic RMS-VAD Ambient Noise Self-Calibration**:  
-   During system `setup()`, the MCU samples 8 consecutive audio slices to calculate baseline ambient background RMS noise. It dynamically establishes the VAD threshold with a safety margin (`VAD_THRESHOLD = RMS_avg + 0.01`). During runtime, any audio slice failing the RMS threshold is immediately bypassed without executing MFCC or NN inference.
-3. **4-Slice Continuous Sliding Window (1000 ms Window / 250 ms Hop)**:  
-   A full speech command is evaluated across a 1000 ms window composed of 4 x 250 ms slices. Every 250 ms, a new slice is pushed, maintaining continuous real-time listening with a reaction latency under 250 ms.
-4. **Multi-Label Probability Resolution & Gating**:  
-   Outputs from the softmax layer are gated by `CONFIDENCE_THRESHOLD = 0.55`:
-   * $p_{\text{go\_me}} \ge 0.55$: Verified Authorized Owner $\rightarrow$ Assert **HIGH** (Turn ON LED).
-   * $p_{\text{stop\_me}} \ge 0.55$: Verified Authorized Owner $\rightarrow$ Assert **LOW** (Turn OFF LED).
-   * $p_{\text{others}} \ge 0.55$: Imposter Attempt Detected $\rightarrow$ Trigger **REJECT** security barrier.
-   * Otherwise: Inconclusive / Background Noise $\rightarrow$ Preserve previous state.
+1. **非同步 Ping-Pong 雙緩衝機制**：  
+   PDM 中斷函式在後台持續填充 Active Buffer，前台 CPU 則對 Ready Buffer 執行推論，實現採樣與運算解耦。
+2. **動態 RMS-VAD 底噪自我校準**：  
+   在系統啟動時連續採樣 8 個切片計算環境背景底噪均方根（RMS），動態建立門檻（`VAD_THRESHOLD = RMS_avg + 0.01`）。主迴圈推論前先判定 RMS，靜音時直接休眠跳過推論。
+3. **4-Slice 滑動視窗連續推論**：  
+   語音辨識視窗為 1000 ms，切分為 4 個 250 ms 子切片。每 250 ms 推進一個切片並觸發判定，維持即時連續監聽。
+4. **多標籤機率解析與決策控制**：  
+   設定信心度門檻 `CONFIDENCE_THRESHOLD = 0.55`：
+   * $p_{	ext{go\_me}} \ge 0.55$：本人指令「GO」 $ightarrow$ 輸出 HIGH 點亮 LED。
+   * $p_{	ext{stop\_me}} \ge 0.55$：本人指令「STOP」 $ightarrow$ 輸出 LOW 熄滅 LED。
+   * $p_{	ext{others}} \ge 0.55$：他人冒用 $ightarrow$ 觸發 REJECT 攔截並保持原狀態。
+   * 其餘狀況：低信心度或背景雜訊 $ightarrow$ 維持原狀態不更動。
 
 ---
 
-## 🧠 Neural Network Topology & INT8 Quantization
+## 🧠 神經網路拓撲與 INT8 量化 (Neural Network & Quantization)
 
 ![1D-CNN Topology](docs/figures/fig2_cnn_pipeline_horizontal.png)
 
-* **Acoustic Preprocessing**: Input audio slices are transformed via 20-channel MFCC spanning **300 Hz ~ 6000 Hz** (pre-emphasis 0.98, 512-point FFT, 32 triangular filter banks).
-* **Lightweight 1D-CNN Topology**:
-  * Input Tensor: $(49 \times 20)$ Reshaped MFCC Spectrogram matrix.
-  * **Conv1D Layer 1**: 8 Filters, Kernel Size = 3, ReLU activation.
-  * **Conv1D Layer 2**: 16 Filters, Kernel Size = 3, ReLU activation.
-  * **Regularization**: 1D Max-Pooling + Dropout ($p = 0.25$) to prevent acoustic overfitting.
-  * **Output Layer**: Dense Softmax projecting into 5 distinct classes (`go_me`, `stop_me`, `go_others`, `stop_others`, `noise`).
-* **INT8 Quantization (CMSIS-NN & EON Compiler)**:  
-  Both weights and activations are quantized to 8-bit integers. Inference memory is reduced from ~54 KB (Float32) to **13.5 KB (INT8)**, with zero accuracy degradation.
+* **訊號前處理**：MFCC 聚焦 300~6000 Hz，配置 20 階倒頻譜係數、32 組梅爾濾波器、512 點 FFT。
+* **1D-CNN 網路架構**：
+  * 輸入重塑為 (49 x 20) 特徵矩陣。
+  * 卷積層 1：Filters: 8, Kernel: 3, ReLU。
+  * 卷積層 2：Filters: 16, Kernel: 3, ReLU。
+  * 正則化：MaxPool + Dropout ($p = 0.25$) 防止過擬合。
+  * 輸出層：Dense Softmax 連接 5 類別輸出。
+* **INT8 量化**：全網絡量化為 8-bit 整數，神經網路記憶體由原本 Float32 的 ~54 KB 大幅縮減至 13.5 KB，且準確率無顯著衰退。
 
 ---
 
-## 📈 Experimental Validation & Biometric Evaluation
+## 📈 測試集混淆矩陣與性能表現 (Performance)
 
 ![Confusion Matrix & Performance](docs/figures/fig3_confusion_matrix_academic.png)
 
-* **High Class Separability**: The INT8 quantized model demonstrates sharp diagonal clustering on the unseen test set, maintaining an average F1-score of **0.94** and overall accuracy of **94.1%**.
-* **Zero Imposter Confusion**: Owner commands (`go_me`, `stop_me`) exhibit negligible cross-activation with unauthorized speakers (`go_others`, `stop_others`), confirming that vocal tract formant characteristics are accurately embedded into the latent representation.
+模型在未知測試集上表現穩定，5 類別對角線分佈顯著，平均 F1-Score 達 0.94，本人與他人之聲音特徵具備良好的分離度。
 
 ---
 
-## 🎬 Real-World On-Device Acoustic Verification (Demos)
+## 🎬 實體開發板現場測試 (Demo Showcase)
 
-The system was flashed onto an physical **Arduino Nano 33 BLE** and evaluated in real-world acoustic environments:
+程式燒錄至實體 Arduino Nano 33 BLE 進行現場實測：
 
-| Demo Video | Speaker & Spoken Command | System Decision & Gating Action | Physical Device State | Video Link |
+| 測試案例 | 發話者與輸入語音 | 系統決策與動作 | 實機測試狀態 | 影片連結 |
 | :---: | :---: | :---: | :---: | :---: |
-| **Demo 1** | Authorized Owner: **"GO"** | `OWNER_GO` Confidence $\ge 0.55$ $\rightarrow$ High | **SUCCESS (LED ON)** | [me_test1.mp4](demo_videos/me_test1.mp4) |
-| **Demo 2** | Authorized Owner: **"STOP"** | `OWNER_STOP` Confidence $\ge 0.55$ $\rightarrow$ Low | **SUCCESS (LED OFF)** | [me_test2.mp4](demo_videos/me_test2.mp4) |
-| **Demo 3** | Unauthorized Imposter: **"GO"** | `IMPOSTER_GO` $\rightarrow$ Intercepted by REJECT | **BLOCKED (LED Kept OFF)** | [others_go.mp4](demo_videos/others_go.mp4) |
-| **Demo 4** | Unauthorized Imposter: **"STOP"** | `IMPOSTER_STOP` $\rightarrow$ Intercepted by REJECT | **BLOCKED (LED Kept ON)** | [others_stop.mp4](demo_videos/others_stop.mp4) |
+| **Demo 1** | 本人發音「GO」 | OWNER_GO 信心度達標 $ightarrow$ 輸出 High | **成功觸發 (LED 點亮)** | [me_test1.mp4](demo_videos/me_test1.mp4) |
+| **Demo 2** | 本人發音「STOP」 | OWNER_STOP 信心度達標 $ightarrow$ 輸出 Low | **成功觸發 (LED 熄滅)** | [me_test2.mp4](demo_videos/me_test2.mp4) |
+| **Demo 3** | 他人冒用發音「GO」 | 觸發 REJECT 邏輯阻斷 | **成功攔截 (LED 保持熄滅)** | [others_go.mp4](demo_videos/others_go.mp4) |
+| **Demo 4** | 他人冒用發音「STOP」 | 觸發 REJECT 邏輯阻斷 | **成功攔截 (LED 保持點亮)** | [others_stop.mp4](demo_videos/others_stop.mp4) |
 
 ---
 
-## 🔍 Engineering Limitations & Academic Insights
+## 🔍 工程問題剖析與後續改善 (Engineering Insights)
 
-1. **Loudspeaker Secondary Replay Distortion (Natural Anti-Replay Defense)**:  
-   When replaying pre-recorded owner voices through laptop speakers, the system consistently rejected the audio as `others`. Acoustic analysis revealed that commercial speaker frequency response non-linearities and diaphragm harmonic distortion alter human formant distributions. This physical acoustic attenuation naturally forms an inherent **Anti-Replay Attack barrier**, boosting practical access control security.
-2. **Transient Power-On Spikes & Adaptive Noise Tracking**:  
-   Hardware plug-in transient spikes can elevate the initial static VAD threshold. Future work introduces a sliding median filter during initialization to strip outlier spikes, alongside a leaky integrator in the main loop to track slow ambient noise drift (e.g., HVAC units) without manual recalibration.
-3. **Temporal Window Dilution on Brief Utterances**:  
-   With a fixed 1000 ms window, brief utterances (~300 ms) occupy a small fraction of the feature tensor. Introducing lightweight acoustic endpointing (Trimming) or Global Temporal Average Pooling will mitigate duration sensitivity.
+1. **揚聲器二次重播失真現象（防重放特性）**：  
+   實測以筆電喇叭播放預錄本人語音時，系統會判定為 `others`。分析為消費級喇叭之頻率響應失真改變了共振峰分佈，物理上形成了天然的防錄音重放保護。
+2. **上電瞬態雜訊處理**：  
+   硬體插拔時產生的電氣突波可能拉高初始 VAD 門檻。後續可在初始化階段導入中位數濾波（Median Filter）剔除離群雜訊。
+3. **固定視窗長度之特徵稀釋**：  
+   1000 ms 固定視窗中，若發音時間較短（如 0.3 秒），其餘靜音訊號會稀釋卷積特徵，後續可加入簡易端點偵測進行對齊。
 
 ---
 
-## 🚀 Quick Start & Deployment Guide
+## 🚀 快速開始與燒錄說明 (Quick Start)
 
-### Prerequisites
-* **Hardware**: [Arduino Nano 33 BLE](https://store.arduino.cc/products/arduino-nano-33-ble) (Nordic nRF52840) with onboard MP34DT05 PDM microphone.
-* **Software**: Arduino IDE 2.x with `Arduino Mbed OS Nano Boards` package installed.
+### 硬體需求
+* [Arduino Nano 33 BLE](https://store.arduino.cc/products/arduino-nano-33-ble)（含板載 MP34DT05 PDM 麥克風）
+* Micro USB 傳輸線
 
-### Steps
-1. **Clone the Repository**:
+### 軟體環境與步驟
+1. **複製專案**：
    ```bash
    git clone https://github.com/blackbigg/tinyml-speaker-recognition.git
    cd tinyml-speaker-recognition
    ```
-2. **Install the Edge Impulse Model Library**:
-   * Open Arduino IDE.
-   * Navigate to `Sketch` $\rightarrow$ `Include Library` $\rightarrow$ `Add .ZIP Library...`
-   * Select `models/ei-edge_computing_project-arduino-1.0.1.zip`.
-3. **Flash the Firmware**:
-   * Open `firmware/speaker_verification/speaker_verification.ino`.
-   * Select Board: **Arduino Nano 33 BLE** and the corresponding COM port.
-   * Click **Upload**.
-4. **Monitor Output**:
-   * Open Serial Monitor at **115200 baud**.
-   * Wait 2 seconds for dynamic noise calibration.
-   * Speak "GO" or "STOP" to command the system.
+2. **匯入 Edge Impulse 模型庫**：
+   * 開啟 Arduino IDE。
+   * 點選 `草稿碼 (Sketch)` $ightarrow$ `載入程式庫 (Include Library)` $ightarrow$ `加入 .ZIP 程式庫... (Add .ZIP Library...)`。
+   * 選擇本倉庫中的 `models/ei-edge_computing_project-arduino-1.0.1.zip`。
+3. **開啟並燒錄程式**：
+   * 開啟 `firmware/speaker_verification/speaker_verification.ino`。
+   * 開發板選擇 **Arduino Nano 33 BLE**，並選取正確的 COM 埠。
+   * 點擊 **上傳 (Upload)**。
+4. **開啟序列埠監控視窗**：
+   * 波特率設定為 **115200 baud**。
+   * 開機靜候 2 秒完成底噪校準，即可開始說出「GO」或「STOP」進行控制。
 
 ---
 
-## 📂 Repository Directory Structure
+## 📂 專案目錄結構 (Repository Structure)
 
-```
+```text
 tinyml-speaker-recognition/
-├── README.md                      # Comprehensive academic & engineering documentation
+├── README.md                      # 專案說明文件
 ├── LICENSE                        # MIT License
-├── .gitignore                     # Arduino / C++ gitignore specification
+├── .gitignore                     # Git 忽略設定
 ├── firmware/
 │   └── speaker_verification/
-│       └── speaker_verification.ino # Clean, commented Arduino firmware source
+│       └── speaker_verification.ino # Arduino 韌體原始碼（含雙緩衝與決策邏輯）
 ├── models/
-│   └── ei-edge_computing_project-arduino-1.0.1.zip # Compiled Edge Impulse EON Library
+│   └── ei-edge_computing_project-arduino-1.0.1.zip # Edge Impulse 匯出之 C++ 推論函式庫
 ├── docs/
-│   ├── figures/
-│   │   ├── fig1_system_flowchart_horizontal.png # Horizontal system pipeline
-│   │   ├── fig2_cnn_pipeline_horizontal.png    # 1D-CNN topology diagram
-│   │   └── fig3_confusion_matrix_academic.png  # Confusion matrix & scorecard
-│   └── reports/
-│       ├── 推甄專用_邊緣運算專題實作報告.md      # Full academic project report (Markdown)
-│       └── 推甄專用_邊緣運算專題實作報告.docx    # Formatted Word report (24pt/20pt/12pt/10pt)
-└── demo_videos/
-    ├── me_test1.mp4               # Owner "GO" -> LED ON verification
-    ├── me_test2.mp4               # Owner "STOP" -> LED OFF verification
-    ├── others_go.mp4              # Imposter "GO" -> Blocked verification
-    └── others_stop.mp4            # Imposter "STOP" -> Blocked verification
+│   └── figures/                   # 系統架構圖與流程圖
+│       ├── fig1_system_flowchart_horizontal.png
+│       ├── fig2_cnn_pipeline_horizontal.png
+│       └── fig3_confusion_matrix_academic.png
+└── demo_videos/                   # 實機測試錄影
+    ├── me_test1.mp4               # 本人 GO (開燈)
+    ├── me_test2.mp4               # 本人 STOP (關燈)
+    ├── others_go.mp4              # 他人 GO (阻斷)
+    └── others_stop.mp4            # 他人 STOP (阻斷)
 ```
 
 ---
 
-## 📜 Academic Citation & Contact
+## 📜 授權條款 (License)
 
-If this repository or its firmware pipeline assists your research or projects, please cite:
-
-```bibtex
-@misc{liu2024tinymlspeaker,
-  author = {Cheng-Feng Liu (劉誠豐)},
-  title = {TinyML On-Device Speaker Verification & Acoustic Control System on Nordic nRF52840},
-  year = {2024},
-  publisher = {GitHub},
-  howpublished = {\url{https://github.com/blackbigg/tinyml-speaker-recognition}}
-}
-```
-
-* **Author**: 劉誠豐 (Cheng-Feng Liu)
-* **Email**: tw0900172332@gmail.com
-* **Affiliation**: Department of Electronic Engineering, National Taipei University of Technology (國立臺北科技大學 電子工程系)
+本專案採用 [MIT License](LICENSE) 授權。
